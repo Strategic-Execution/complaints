@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Motor Complaints Trigger Analysis Dashboard</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <style>
+        /* --- CSS VARIABLES --- */
+        :root {
+            --primary-color: #4E79A7;
+            --primary-hover-color: #3f6285;
+            --secondary-color: #F28E2B;
+            --danger-color: #E15759;
+            
+            --bg-light: #f8f9fc;
+            --bg-white: #ffffff;
+            --bg-subtle: #f9fafb;
+
+            --text-dark: #111827;
+            --text-medium: #374151;
+            --text-light: #6b7280;
+            
+            --border-color: #e5e7eb;
+            --border-color-dark: #d1d5db;
+
+            --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.05);
+            --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+            --shadow-lg: 0 10px 25px rgba(0, 0, 0, 0.2);
+
+            --radius-md: 8px;
+            --radius-lg: 12px;
+
+            --font-main: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+
+        /* --- GENERAL & LAYOUT --- */
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: var(--font-main); background: var(--bg-light); color: var(--text-medium); min-height: 100vh; }
+        .container { max-width: 1400px; margin: 0 auto; padding: 32px; }
+
+        /* --- HEADER --- */
+        .header { background: var(--bg-white); box-shadow: var(--shadow-sm); border-bottom: 1px solid var(--border-color); }
+        .header-content { max-width: 1400px; margin: 0 auto; padding: 24px 32px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 20px; }
+        .header-title h1 { font-size: 28px; font-weight: 600; color: var(--text-dark); }
+        .upload-btn { background: #2563eb; color: var(--bg-white); padding: 10px 20px; border: none; border-radius: var(--radius-md); cursor: pointer; font-size: 14px; font-weight: 500; transition: background-color 0.2s; }
+        .upload-btn:hover { background: #1d4ed8; }
+        .upload-input { display: none; }
+        
+        /* --- GRIDS (Metrics, Filters, Charts) --- */
+        .metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 24px; margin-bottom: 32px; }
+        .filters-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; }
+        .charts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; margin-bottom: 32px; }
+
+        /* --- CARDS (Base, Metric, Filter, Chart, Table) --- */
+        .card { background: var(--bg-white); border-radius: var(--radius-lg); box-shadow: var(--shadow-md); border: 1px solid var(--border-color); padding: 24px; margin-bottom: 32px; }
+        .metric-card { padding: 24px; display: flex; justify-content: space-between; align-items: center; }
+        .metric-text p:first-child { font-size: 14px; font-weight: 500; color: var(--text-light); margin-bottom: 4px; }
+        .metric-text p:last-child { font-size: 24px; font-weight: bold; color: var(--text-dark); }
+        .metric-icon { font-size: 24px; }
+        .chart-card h3, .filters-card h3, .table-card h3 { font-size: 18px; font-weight: 600; color: var(--text-dark); margin-bottom: 24px; display: flex; align-items: center; gap: 12px; }
+        .full-width-chart { grid-column: 1 / -1; }
+        .chart-container { position: relative; height: 350px; }
+        
+        /* --- FILTERS & CONTROLS --- */
+        .filters-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 16px; }
+        .reset-btn { background-color: var(--bg-subtle); border: 1px solid var(--border-color-dark); color: var(--text-medium); padding: 6px 12px; font-size: 12px; font-weight: 500; border-radius: 6px; cursor: pointer; transition: background-color 0.2s; }
+        .reset-btn:hover { background-color: var(--border-color); }
+        .filter-group label { display: block; font-size: 14px; font-weight: 500; margin-bottom: 8px; }
+        .filter-group select, .filter-group input { width: 100%; padding: 10px 12px; border: 1px solid var(--border-color-dark); border-radius: var(--radius-md); font-size: 14px; background: var(--bg-white); }
+        
+        /* --- TABLE --- */
+        .table-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; }
+        #complaintSearchInput { width: 100%; max-width: 300px; padding: 8px 12px; border: 1px solid var(--border-color-dark); border-radius: var(--radius-md); font-size: 14px; }
+        .table-container { overflow-x: auto; margin-top: 16px; }
+        table { width: 100%; border-collapse: collapse; }
+        th { background: var(--bg-subtle); padding: 12px 16px; text-align: left; font-size: 12px; font-weight: 500; color: var(--text-light); text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid var(--border-color); }
+        td { padding: 12px 16px; font-size: 14px; color: var(--text-medium); border-bottom: 1px solid var(--bg-subtle); vertical-align: top; }
+        tr:last-child td { border-bottom: none; }
+        .clickable-row:hover { background: var(--bg-subtle); cursor: pointer; }
+        .summary-cell { max-width: 350px; white-space: normal; word-wrap: break-word; }
+        
+        /* --- PAGINATION --- */
+        #pagination-controls { margin-top: 20px; display: flex; justify-content: center; align-items: center; gap: 10px; flex-wrap: wrap; }
+        .pagination-btn { padding: 8px 12px; border: 1px solid var(--border-color-dark); background: var(--bg-white); border-radius: 6px; cursor: pointer; }
+        .pagination-btn:disabled { cursor: not-allowed; opacity: 0.5; }
+        .pagination-btn.active { background: #2563eb; color: var(--bg-white); border-color: #2563eb; }
+
+        /* --- MODAL --- */
+        .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.5); align-items: center; justify-content: center; }
+        .modal-dialog { background-color: var(--bg-white); border-radius: var(--radius-lg); width: 90%; max-width: 800px; box-shadow: var(--shadow-lg); max-height: 90vh; display: flex; flex-direction: column; }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 24px; border-bottom: 1px solid var(--border-color); }
+        .modal-header h2 { font-size: 20px; color: var(--text-dark); margin: 0; }
+        .close-btn { color: #aaa; font-size: 28px; font-weight: bold; cursor: pointer; border: none; background: none; }
+        .modal-search-bar { position: sticky; top: 0; background: var(--bg-white); padding: 16px 24px; border-bottom: 1px solid var(--border-color); display: flex; gap: 12px; align-items: center; z-index: 10; }
+        #modalSearchInput { flex-grow: 1; padding: 8px 12px; border: 1px solid var(--border-color-dark); border-radius: var(--radius-md); font-size: 14px; }
+        .modal-search-controls button { width: 32px; height: 32px; border: 1px solid var(--border-color-dark); background-color: var(--bg-subtle); border-radius: 6px; cursor: pointer; }
+        .modal-search-controls button:disabled { opacity: 0.4; cursor: not-allowed; }
+        #modal-search-counter { font-size: 14px; color: var(--text-light); min-width: 50px; text-align: center; }
+        .modal-content { padding: 8px 24px 24px 24px; overflow-y: auto; }
+        .modal-section { margin-top: 20px; }
+        .modal-section h3, .modal-section h4 { color: var(--text-dark); }
+        .modal-note-box { background: var(--bg-subtle); padding: 12px; border-radius: 6px; border: 1px solid var(--border-color); margin-top: 8px; line-height: 1.5; white-space: pre-wrap; }
+        mark { background-color: #fef08a; padding: 1px 0; border-radius: 3px; }
+        mark.active { background-color: #f97316; color: white; }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <div class="header-content">
+            <div class="header-title"><h1>Motor Complaints Trigger Analysis</h1></div>
+            <div>
+                <input type="file" id="fileInput" class="upload-input" accept=".csv" />
+                <button id="uploadBtn" class="upload-btn">📤 Upload CSV</button>
+            </div>
+        </div>
+    </header>
+
+    <main class="container">
+        <section class="metrics-grid">
+            <div class="card metric-card"><div class="metric-text"><p>Total Complaints</p><p id="totalComplaints">0</p></div><div class="metric-icon">📄</div></div>
+            <div class="card metric-card"><div class="metric-text"><p>Unique Stages</p><p id="journeyStages">0</p></div><div class="metric-icon">⏰</div></div>
+            <div class="card metric-card"><div class="metric-text"><p>Unique Triggers</p><p id="complaintTriggers">0</p></div><div class="metric-icon">⚠️</div></div>
+            <div class="card metric-card"><div class="metric-text"><p>Avg Confidence</p><p id="avgConfidence">0%</p></div><div class="metric-icon">📊</div></div>
+        </section>
+
+        <section class="card filters-card">
+            <div class="filters-header">
+                <h3>🔍 Filters</h3>
+                <button class="reset-btn" id="resetFiltersBtn">Reset Filters</button>
+            </div>
+            <div class="filters-grid">
+                <div class="filter-group"><label for="dateFilter">Date Period</label><select id="dateFilter"><option value="all">All Time</option><option value="recent">Last 12 Months</option><option value="year">This Year</option><option value="custom">Custom Range</option></select></div>
+                <div class="filter-group" id="customDateRangeStart" style="display: none;"><label for="startDate">Start Date</label><input type="date" id="startDate" /></div>
+                <div class="filter-group" id="customDateRangeEnd" style="display: none;"><label for="endDate">End Date</label><input type="date" id="endDate" /></div>
+                <div class="filter-group"><label for="stageFilter">Journey Stage</label><select id="stageFilter"><option value="all">All Stages</option></select></div>
+                <div class="filter-group"><label for="triggerFilter">Trigger</label><select id="triggerFilter"><option value="all">All Triggers</option></select></div>
+                <div class="filter-group"><label for="confidenceFilter">Confidence</label><select id="confidenceFilter"><option value="all">All Scores</option><option value="90">90%+</option><option value="80">80%+</option></select></div>
+            </div>
+        </section>
+
+        <section class="charts-grid">
+            <div class="card chart-card full-width-chart" id="trends-chart-card"><h3>Complaint Trends Over Time</h3><div class="chart-container"><canvas id="trendsChart"></canvas></div></div>
+            <div class="card chart-card" id="stage-chart-card"><h3>Issues by Journey Stage</h3><div class="chart-container"><canvas id="stageChart"></canvas></div></div>
+            <div class="card chart-card" id="top-triggers-chart-card"><h3>Top Triggers</h3><div class="chart-container"><canvas id="topTriggersChart"></canvas></div></div>
+            <div class="card chart-card full-width-chart" id="breakdown-chart-card"><h3>Triggers Breakdown by Stage</h3><div class="chart-container"><canvas id="stageTriggerChart"></canvas></div></div>
+        </section>
+
+        <section class="card table-card">
+            <div class="table-header">
+                <h3>Complaint Trigger Details</h3>
+                <input type="search" id="complaintSearchInput" placeholder="Search by Claim Number...">
+            </div>
+            <div class="table-container">
+                <table>
+                    <thead><tr><th>Claim Number</th><th>Date</th><th>Stage</th><th>Trigger</th><th>Confidence</th><th>Summary</th></tr></thead>
+                    <tbody id="claimsTableBody"></tbody>
+                </table>
+            </div>
+            <div id="pagination-controls"></div>
+        </section>
+    </main>
+    
+    <div id="complaintDetailModal" class="modal">
+        <div class="modal-dialog">
+             <!-- Details populated by JS -->
+        </div>
+    </div>
+
+    <script>
+        'use strict';
+
+        // --- CONSTANTS & CONFIGURATION ---
+        const ROWS_PER_PAGE = 100;
+        const CHART_COLORS = ['#4E79A7', '#F28E2B', '#E15759', '#76B7B2', '#59A14F', '#EDC948', '#B07AA1', '#FF9DA7', '#9C755F'];
+        const MUTED_COLOR_OPACITY = 0.25;
+        // --- FIX: Correct the typo in 'Repair/Recovery' ---
+        const STAGE_ORDER = ['Policy & Sales', 'Incident', 'Lodgement', 'Assessment', 'Decision', 'Repair/Recovery', 'Settlement/Closure', 'Unknown'];
+        const PLACEHOLDER_STAGE = { STAGE_NAME: 'Unknown', COMPLAINT_TRIGGER: { TRIGGER: 'Unknown' }, CONFIDENCE_SCORE: null };
+
+        // --- STATE MANAGEMENT ---
+        let allData = [];
+        let displayedData = [];
+        let charts = {};
+        let currentPage = 1;
+        let modalSearchState = { matches: [], currentIndex: -1 };
+        
+        // --- SAMPLE DATA ---
+        const sampleData = [
+            {"CLAIM_ID":"7463756", "CLAIM_NUMBER":"NRP256311302", "COMPLAINT_DATE":"26/02/2025", "COMPLAINT_SUMMARY":"The insured reported losing personal belongings in the vehicle holding yard...", "JOURNEY_STAGES":[{"COMPLAINT_TRIGGER":{"CONFIDENCE_SCORE":0.6, "TRIGGER":"Third-Party Towing or Storage Dispute"}, "CONFIDENCE_SCORE":0.6, "STAGE_NAME":"Repair/Recovery"}]},
+            { "CLAIM_ID":"1", "CLAIM_NUMBER":"CLAIM-001", "COMPLAINT_DATE":"1/1/2024", "COMPLAINT_SUMMARY":"The online portal failed...", "JOURNEY_STAGES":[{"STAGE_NAME":"Lodgement","COMPLAINT_TRIGGER":{"TRIGGER":"Online Claim Lodgement Failure"},"CONFIDENCE_SCORE":0.9}]},
+            { "CLAIM_ID":"3", "CLAIM_NUMBER":"CLAIM-003", "COMPLAINT_DATE":null, "COMPLAINT_SUMMARY":"Customer called to complain but did not provide enough details...", "JOURNEY_STAGES":[]}
+        ];
+
+        // --- DOM ELEMENT CACHE ---
+        const dom = {
+            fileInput: document.getElementById('fileInput'), uploadBtn: document.getElementById('uploadBtn'), resetFiltersBtn: document.getElementById('resetFiltersBtn'), complaintSearchInput: document.getElementById('complaintSearchInput'),
+            dateFilter: document.getElementById('dateFilter'), startDate: document.getElementById('startDate'), endDate: document.getElementById('endDate'), stageFilter: document.getElementById('stageFilter'), triggerFilter: document.getElementById('triggerFilter'), confidenceFilter: document.getElementById('confidenceFilter'),
+            customDateRangeStart: document.getElementById('customDateRangeStart'), customDateRangeEnd: document.getElementById('customDateRangeEnd'),
+            totalComplaints: document.getElementById('totalComplaints'), journeyStages: document.getElementById('journeyStages'), complaintTriggers: document.getElementById('complaintTriggers'), avgConfidence: document.getElementById('avgConfidence'),
+            trendsChartCard: document.getElementById('trends-chart-card'), stageChartCard: document.getElementById('stage-chart-card'), topTriggersChartCard: document.getElementById('top-triggers-chart-card'), breakdownChartCard: document.getElementById('breakdown-chart-card'),
+            trendsChart: document.getElementById('trendsChart').getContext('2d'), stageChart: document.getElementById('stageChart').getContext('2d'), topTriggersChart: document.getElementById('topTriggersChart').getContext('2d'), stageTriggerChart: document.getElementById('stageTriggerChart').getContext('2d'),
+            claimsTableBody: document.getElementById('claimsTableBody'), paginationControls: document.getElementById('pagination-controls'),
+            complaintDetailModal: document.getElementById('complaintDetailModal'), modalDialog: document.querySelector('.modal-dialog')
+        };
+        
+        // --- INITIALIZATION ---
+        function initializeDashboard() {
+            addEventListeners();
+            loadData(sampleData);
+        }
+
+        function addEventListeners() {
+            dom.uploadBtn.addEventListener('click', () => dom.fileInput.click());
+            dom.fileInput.addEventListener('change', handleFileUpload);
+            const filterElements = [dom.dateFilter, dom.stageFilter, dom.triggerFilter, dom.confidenceFilter, dom.startDate, dom.endDate];
+            filterElements.forEach(el => el.addEventListener('change', renderDashboard));
+            dom.complaintSearchInput.addEventListener('input', renderDashboard);
+            dom.resetFiltersBtn.addEventListener('click', resetFilters);
+            window.addEventListener('click', (event) => { if (event.target === dom.complaintDetailModal) closeModal(); });
+        }
+
+        // --- DATA HANDLING ---
+        function loadData(data) {
+            allData = data;
+            resetFilters();
+        }
+
+        function handleFileUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            Papa.parse(file, { header: true, skipEmptyLines: true,
+                complete: (results) => {
+                    if (!results.data || results.data.length === 0) { alert('Error: The selected file is empty or could not be parsed.'); return; }
+                    const { loadedData, errorCount } = processUploadedData(results);
+                    if (loadedData.length > 0) {
+                        alert(`Successfully loaded ${loadedData.length} complaints.` + (errorCount > 0 ? ` Could not process ${errorCount} rows.` : ''));
+                        loadData(loadedData);
+                    } else { alert('Upload failed: No valid complaint data could be found in the file. Ensure a "JSON Output" column exists with valid JSON.'); }
+                },
+                error: (err) => { alert(`An error occurred while parsing the file: ${err.message}`); }
+            });
+        }
+
+        function processUploadedData(results) {
+            let loadedData = [], errorCount = 0;
+            const headers = results.meta.fields;
+            const findHeader = (names) => { for (const name of names) { const found = headers.find(h => h.trim().toLowerCase() === name.toLowerCase()); if (found) return found; } return null; };
+            const jsonKey = findHeader(['JSON Output', 'json']), originalSummaryKey = findHeader(['Original Complaint Summary', 'original claim summary']), notesKey = findHeader(['Complaint Notes', 'compliant notes', 'claim notes']);
+            if (!jsonKey) return { loadedData, errorCount };
+            results.data.forEach((row) => {
+                const jsonString = row[jsonKey];
+                if (jsonString && jsonString.trim().startsWith('{')) {
+                    try {
+                        const parsedJson = JSON.parse(jsonString.replace(/[\n\r]+/g, ' '));
+                        if (originalSummaryKey) parsedJson.ORIGINAL_COMPLAINT_SUMMARY = row[originalSummaryKey];
+                        if (notesKey) parsedJson.COMPLAINT_NOTES = row[notesKey];
+                        if (parsedJson.CLAIM_ID) { loadedData.push(parsedJson); } else { errorCount++; }
+                    } catch (e) { errorCount++; }
+                } else if (jsonString) { errorCount++; }
+            });
+            return { loadedData, errorCount };
+        }
+        
+        function parseDate(dateStr) {
+            if (!dateStr || typeof dateStr !== 'string') return null;
+            if (dateStr.includes('-')) { const d = new Date(dateStr); if(!isNaN(d)) return d; }
+            if (dateStr.includes('/')) {
+                const parts = dateStr.split('/');
+                if (parts.length === 3) {
+                    const d = parseInt(parts[0]), m = parseInt(parts[1]), y = parseInt(parts[2]);
+                    if (y > 1900 && m > 0 && m <= 12 && d > 0 && d <= 31) { const dt = new Date(y, m - 1, d); if(!isNaN(dt)) return dt; }
+                }
+            }
+            return null;
+        }
+
+        // --- FILTERING LOGIC ---
+        function resetFilters() {
+            dom.dateFilter.value = 'all'; dom.stageFilter.value = 'all'; dom.triggerFilter.value = 'all'; dom.confidenceFilter.value = 'all'; dom.complaintSearchInput.value = '';
+            updateFilterDropdowns(); renderDashboard();
+        }
+
+        function getFilterState() {
+            return { date: dom.dateFilter.value, stage: dom.stageFilter.value, trigger: dom.triggerFilter.value, confidence: dom.confidenceFilter.value, startDate: dom.startDate.value, endDate: dom.endDate.value, searchTerm: dom.complaintSearchInput.value.toUpperCase() };
+        }
+
+        function filterData(filters, options = {}) {
+            dom.customDateRangeStart.style.display = filters.date === 'custom' ? 'block' : 'none';
+            dom.customDateRangeEnd.style.display = filters.date === 'custom' ? 'block' : 'none';
+
+            const flatData = allData.flatMap(item => {
+                const stages = (item.JOURNEY_STAGES && item.JOURNEY_STAGES.length > 0) ? item.JOURNEY_STAGES : [PLACEHOLDER_STAGE];
+                return stages.map(stage => ({ item, stage }));
+            });
+
+            return flatData.filter(({ item, stage }) => {
+                const complaintDate = parseDate(item.COMPLAINT_DATE);
+                
+                let dateMatch = true;
+                if (filters.date !== 'all') {
+                    if (!complaintDate) { dateMatch = false; }
+                    else {
+                        const now = new Date();
+                        switch (filters.date) {
+                            case 'year': dateMatch = complaintDate.getFullYear() === now.getFullYear(); break;
+                            case 'recent': const oneYearAgo = new Date(); oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1); dateMatch = complaintDate >= oneYearAgo; break;
+                            case 'custom': if (filters.startDate && filters.endDate) { dateMatch = complaintDate >= new Date(filters.startDate) && complaintDate <= new Date(filters.endDate); } else { dateMatch = false; } break;
+                        }
+                    }
+                }
+                
+                const stageMatch = filters.stage === 'all' || stage.STAGE_NAME === filters.stage;
+                const triggerMatch = filters.trigger === 'all' || stage.COMPLAINT_TRIGGER?.TRIGGER === filters.trigger;
+                const confidenceMatch = filters.confidence === 'all' || (stage.CONFIDENCE_SCORE && (stage.CONFIDENCE_SCORE * 100 >= parseInt(filters.confidence)));
+                const searchMatch = options.ignoreSearch || !filters.searchTerm || item.CLAIM_NUMBER?.toUpperCase().includes(filters.searchTerm);
+                
+                return dateMatch && stageMatch && triggerMatch && confidenceMatch && searchMatch;
+            });
+        }
+        
+        // --- RENDERING ---
+        function renderDashboard() {
+            const filters = getFilterState();
+            const chartData = filterData(filters, { ignoreSearch: true });
+            displayedData = filterData(filters);
+            currentPage = 1;
+            
+            updateLayout(filters);
+            const totalCount = allData.flatMap(item => (item.JOURNEY_STAGES && item.JOURNEY_STAGES.length > 0) ? item.JOURNEY_STAGES : [PLACEHOLDER_STAGE]).length;
+            updateMetrics(chartData, totalCount);
+            updateCharts(chartData, filters);
+            renderTable(); renderPagination();
+        }
+        
+        function updateLayout(filters) {
+            const inFocusMode = filters.trigger !== 'all';
+            dom.topTriggersChartCard.style.display = inFocusMode ? 'none' : 'block';
+            dom.breakdownChartCard.style.display = inFocusMode ? 'none' : 'block';
+            dom.stageChartCard.style.gridColumn = inFocusMode ? '1 / -1' : '';
+        }
+
+        function updateMetrics(data, totalCount) {
+            dom.totalComplaints.textContent = totalCount;
+            dom.journeyStages.textContent = new Set(data.map(({ stage }) => stage.STAGE_NAME)).size;
+            dom.complaintTriggers.textContent = new Set(data.map(({ stage }) => stage.COMPLAINT_TRIGGER?.TRIGGER).filter(Boolean)).size;
+            const confidences = data.map(({ stage }) => stage.CONFIDENCE_SCORE).filter(c => c != null);
+            const avgConfidence = confidences.length > 0 ? (confidences.reduce((a, b) => a + b, 0) / confidences.length * 100).toFixed(0) : 0;
+            dom.avgConfidence.textContent = `${avgConfidence}%`;
+        }
+        
+        function updateFilterDropdowns() {
+            const allStagesFromData = allData.flatMap(item => (item.JOURNEY_STAGES && item.JOURNEY_STAGES.length > 0) ? item.JOURNEY_STAGES.map(s => s.STAGE_NAME) : ['Unknown']);
+            const stages = new Set(allStagesFromData);
+            const triggers = new Set(allData.flatMap(item => (item.JOURNEY_STAGES && item.JOURNEY_STAGES.length > 0) ? item.JOURNEY_STAGES.map(s => s.COMPLAINT_TRIGGER?.TRIGGER) : ['Unknown']).filter(Boolean));
+            
+            dom.stageFilter.innerHTML = '<option value="all">All Stages</option>';
+            [...stages].sort((a,b) => STAGE_ORDER.indexOf(a) - STAGE_ORDER.indexOf(b)).forEach(stage => dom.stageFilter.innerHTML += `<option value="${stage}">${stage}</option>`);
+            
+            dom.triggerFilter.innerHTML = '<option value="all">All Triggers</option>';
+            [...triggers].sort().forEach(cause => dom.triggerFilter.innerHTML += `<option value="${cause}">${cause}</option>`);
+        }
+
+        function updateCharts(data, filters) {
+            Object.values(charts).forEach(chart => chart.destroy());
+            renderTrendsChart(data, filters);
+            if (filters.trigger === 'all') {
+                const stageChartData = filterData({ ...filters, stage: 'all' }, { ignoreSearch: true });
+                renderStageChart(stageChartData, filters);
+                renderTopTriggersChart(data, filters);
+                renderStageTriggerChart(data, filters);
+            }
+        }
+        
+        function renderStageChart(data, filters) {
+            const counts = {};
+            // Use STAGE_ORDER as the definitive list of labels to ensure correct names and order
+            const allStagesInOrder = STAGE_ORDER.filter(stageName => data.some(d => d.stage.STAGE_NAME === stageName));
+            allStagesInOrder.forEach(stage => counts[stage] = 0);
+            data.forEach(({ stage }) => { if (counts.hasOwnProperty(stage.STAGE_NAME)) counts[stage.STAGE_NAME]++; });
+            
+            const backgroundColors = allStagesInOrder.map(label => filters.stage === 'all' || label === filters.stage ? CHART_COLORS[0] : CHART_COLORS[0] + Math.round(MUTED_COLOR_OPACITY * 255).toString(16).padStart(2, '0'));
+            
+            charts.stageChart = new Chart(dom.stageChart, { type: 'bar', data: { labels: allStagesInOrder, datasets: [{ data: allStagesInOrder.map(label => counts[label]), backgroundColor: backgroundColors }] }, options: getChartOptions({ legend: false, xGrid: false }) });
+            dom.stageChart.canvas.onclick = (e) => handleChartClick(e, charts.stageChart, dom.stageFilter);
+        }
+        
+        function renderTopTriggersChart(data, filters) {
+            const triggers = {};
+            dom.topTriggersChartCard.querySelector('h3').textContent = filters.stage === 'all' ? 'Top Overall Triggers' : `Top Triggers for ${filters.stage}`;
+            data.forEach(({ stage }) => { if (stage.COMPLAINT_TRIGGER?.TRIGGER) { triggers[stage.COMPLAINT_TRIGGER.TRIGGER] = (triggers[stage.COMPLAINT_TRIGGER.TRIGGER] || 0) + 1; } });
+            const sortedTriggers = Object.entries(triggers).sort((a, b) => b[1] - a[1]).slice(0, 15);
+            charts.topTriggersChart = new Chart(dom.topTriggersChart, { type: 'bar', data: { labels: sortedTriggers.map(([l]) => l.length > 40 ? l.substring(0, 37) + '...' : l), datasets: [{ data: sortedTriggers.map(([, c]) => c), backgroundColor: CHART_COLORS[1] }] }, options: getChartOptions({ indexAxis: 'y', legend: false, yGrid: false, tooltipTitleCallback: (c) => sortedTriggers[c[0].dataIndex][0] }) });
+        }
+        
+        function renderStageTriggerChart(data, filters) {
+            const stageData = {}, triggerTotals = {};
+            data.forEach(({ stage }) => { const stageName = stage.STAGE_NAME || 'Unknown', cause = stage.COMPLAINT_TRIGGER?.TRIGGER || 'Unknown'; if (!stageData[stageName]) stageData[stageName] = {}; stageData[stageName][cause] = (stageData[stageName][cause] || 0) + 1; triggerTotals[cause] = (triggerTotals[cause] || 0) + 1; });
+            const topTriggers = Object.entries(triggerTotals).sort((a, b) => b[1] - a[1]).slice(0, 9).map(e => e[0]);
+            const topTriggerSet = new Set(topTriggers);
+            const chartLabels = STAGE_ORDER.filter(stage => stageData[stage]); 
+            const chartDatasets = {};
+            chartLabels.forEach(stageName => {
+                let otherTotal = 0;
+                Object.entries(stageData[stageName]).forEach(([cause, count]) => { if (topTriggerSet.has(cause)) { if (!chartDatasets[cause]) chartDatasets[cause] = Array(chartLabels.length).fill(0); chartDatasets[cause][chartLabels.indexOf(stageName)] = count; } else { otherTotal += count; } });
+                if (otherTotal > 0) { if (!chartDatasets['Other']) chartDatasets['Other'] = Array(chartLabels.length).fill(0); chartDatasets['Other'][chartLabels.indexOf(stageName)] = otherTotal; }
+            });
+            const finalDatasetOrder = [...topTriggers, 'Other'].filter(c => chartDatasets[c]);
+            const datasets = finalDatasetOrder.map((c, i) => ({ label: c, data: chartDatasets[c], backgroundColor: c === 'Other' ? '#AAAAAA' : CHART_COLORS[i % CHART_COLORS.length], borderRadius: 2 }));
+            charts.stageTriggerChart = new Chart(dom.stageTriggerChart, { type: 'bar', data: { labels: chartLabels, datasets: datasets }, options: getChartOptions({ stacked: true, xGrid: false, legendPos: 'bottom', tooltipMode: 'index' }) });
+            dom.stageTriggerChart.canvas.onclick = (e) => handleChartClick(e, charts.stageTriggerChart, dom.stageFilter);
+        }
+        
+        function renderTrendsChart(data, filters) {
+            const getFinancialQuarter = (date) => { if(!date) return null; const m = date.getMonth(); let y = date.getFullYear(); return `${m>=6&&m<=8?++y:m>=9&&m<=11?++y:y}-Q${m>=6&&m<=8?1:m>=9&&m<=11?2:m>=0&&m<=2?3:4}`; };
+            const validData = data.filter(({item}) => parseDate(item.COMPLAINT_DATE));
+            if (validData.length === 0) { charts.trendsChart = new Chart(dom.trendsChart, { type: 'line', data: { labels: [], datasets: [] } }); return; }
+            const allQuarters = [...new Set(validData.map(({ item }) => getFinancialQuarter(parseDate(item.COMPLAINT_DATE))))].sort();
+            let datasets;
+            if (filters.trigger === 'all') {
+                dom.trendsChartCard.querySelector('h3').textContent = filters.stage === 'all' ? `Top 5 Complaint Trends` : `Top 5 Trends for ${filters.stage}`;
+                const triggerTotals = validData.reduce((acc, {stage}) => { if (stage.COMPLAINT_TRIGGER?.TRIGGER) acc[stage.COMPLAINT_TRIGGER.TRIGGER] = (acc[stage.COMPLAINT_TRIGGER.TRIGGER] || 0) + 1; return acc; }, {});
+                const topTriggers = Object.keys(triggerTotals).sort((a,b) => triggerTotals[b] - triggerTotals[a]).slice(0, 5);
+                datasets = topTriggers.map((trigger, i) => { const counts = Object.fromEntries(allQuarters.map(q => [q, 0])); validData.forEach(({item, stage}) => { if(stage.COMPLAINT_TRIGGER?.TRIGGER === trigger) counts[getFinancialQuarter(parseDate(item.COMPLAINT_DATE))]++; }); return { label: trigger, data: allQuarters.map(q => counts[q]), borderColor: CHART_COLORS[i % CHART_COLORS.length], backgroundColor: CHART_COLORS[i % CHART_COLORS.length], tension: 0.1 }; });
+            } else {
+                dom.trendsChartCard.querySelector('h3').textContent = `Trend for: ${filters.trigger}`;
+                const counts = Object.fromEntries(allQuarters.map(q => [q, 0]));
+                validData.forEach(({ item, stage }) => { if (stage.COMPLAINT_TRIGGER?.TRIGGER === filters.trigger) { counts[getFinancialQuarter(parseDate(item.COMPLAINT_DATE))]++; } });
+                datasets = [{ label: filters.trigger, data: allQuarters.map(q => counts[q]), borderColor: CHART_COLORS[0], backgroundColor: CHART_COLORS[0], tension: 0.1 }];
+            }
+            charts.trendsChart = new Chart(dom.trendsChart, { type: 'line', data: { labels: allQuarters, datasets }, options: getChartOptions({ legendPos: 'bottom', yAxisTitle: 'Number of Complaints', xAxisTitle: 'Financial Quarter', tooltipMode: 'index' }) });
+        }
+        
+        function renderTable() {
+            dom.claimsTableBody.innerHTML = '';
+            const paginatedItems = displayedData.slice((currentPage - 1) * ROWS_PER_PAGE, currentPage * ROWS_PER_PAGE);
+            paginatedItems.forEach(({ item, stage }) => {
+                const row = dom.claimsTableBody.insertRow();
+                row.className = 'clickable-row'; row.onclick = () => showComplaintDetails(item);
+                const parsedDate = parseDate(item.COMPLAINT_DATE);
+                const displayDate = parsedDate ? parsedDate.toLocaleDateString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric' }) : 'N/A';
+                row.innerHTML = `<td>${item.CLAIM_NUMBER || 'N/A'}</td><td>${displayDate}</td><td>${stage.STAGE_NAME || 'N/A'}</td><td>${stage.COMPLAINT_TRIGGER?.TRIGGER || 'N/A'}</td><td>${stage.CONFIDENCE_SCORE != null ? `${(stage.CONFIDENCE_SCORE * 100).toFixed(0)}%` : 'N/A'}</td><td class="summary-cell">${item.COMPLAINT_SUMMARY || 'N/A'}</td>`;
+            });
+        }
+        
+        function renderPagination() {
+            dom.paginationControls.innerHTML = '';
+            const pageCount = Math.ceil(displayedData.length / ROWS_PER_PAGE);
+            if (pageCount <= 1) return;
+            const createButton = (text, page, isDisabled = false, isActive = false) => { const button = document.createElement('button'); button.className = `pagination-btn ${isActive ? 'active' : ''}`; button.innerText = text; button.disabled = isDisabled; button.onclick = () => { currentPage = page; renderTable(); renderPagination(); }; return button; };
+            dom.paginationControls.appendChild(createButton('Previous', currentPage - 1, currentPage === 1));
+            for (let i = 1; i <= pageCount; i++) { dom.paginationControls.appendChild(createButton(i, i, false, currentPage === i)); }
+            dom.paginationControls.appendChild(createButton('Next', currentPage + 1, currentPage === pageCount));
+        }
+
+        function handleChartClick(event, chart, filterElement) {
+            const points = chart.getElementsAtEventForMode(event, 'nearest', { intersect: true }, true);
+            if (points.length) { const label = chart.data.labels[points[0].index]; filterElement.value = label; renderDashboard(); }
+        }
+        
+        function getChartOptions(customOptions = {}) {
+            return { responsive: true, maintainAspectRatio: false, indexAxis: customOptions.indexAxis || 'x', plugins: { legend: { display: !!customOptions.legend, position: customOptions.legendPos || 'top', labels: { usePointStyle: true, pointStyle: 'circle', boxWidth: 8, padding: 12 } }, tooltip: { mode: customOptions.tooltipMode || 'nearest', intersect: customOptions.tooltipMode !== 'index', callbacks: { title: customOptions.tooltipTitleCallback || undefined } } }, scales: { x: { stacked: customOptions.stacked, grid: { display: customOptions.xGrid !== false }, title: { display: !!customOptions.xAxisTitle, text: customOptions.xAxisTitle } }, y: { stacked: customOptions.stacked, beginAtZero: true, grid: { color: 'rgba(0,0,0,0.05)', display: customOptions.yGrid !== false }, title: { display: !!customOptions.yAxisTitle, text: customOptions.yAxisTitle } } } };
+        }
+
+        // --- MODAL LOGIC ---
+        function showComplaintDetails(complaint) {
+            const formatNotes = (text) => { if (!text) return 'N/A'; return text.split(';').map(p => p.trim()).filter(Boolean).length > 1 ? `<ul>${text.split(';').map(p => `<li>${p.trim().replace(/\n/g, '<br>')}</li>`).join('')}</ul>` : text.replace(/\n/g, '<br>'); };
+            dom.modalDialog.innerHTML = `<div class="modal-header"><h2>Complaint ${complaint.CLAIM_NUMBER || 'Details'}</h2><button class="close-btn" aria-label="Close modal">×</button></div><div class="modal-search-bar"><input type="search" id="modalSearchInput" placeholder="Search..."><div class="modal-search-controls"><button id="modal-search-prev" aria-label="Previous"><</button><span id="modal-search-counter">0 of 0</span><button id="modal-search-next" aria-label="Next">></button></div></div><div class="modal-content"><section class="modal-section"><h3>📋 Info</h3><p><strong>Claim ID:</strong> ${complaint.CLAIM_ID}</p><p><strong>Date:</strong> ${complaint.COMPLAINT_DATE || 'N/A'}</p><h4 style="margin-top:16px;margin-bottom:4px;">AI Summary:</h4><div class="modal-note-box searchable">${complaint.COMPLAINT_SUMMARY || 'No summary'}</div></section><section class="modal-section" id="modal-journey-stages"><h3>🧩 Journey Stages</h3></section><section class="modal-section">${complaint.ORIGINAL_COMPLAINT_SUMMARY ? `<h4 style="margin-top:16px;margin-bottom:4px;">Original Summary:</h4><div class="modal-note-box searchable">${formatNotes(complaint.ORIGINAL_COMPLAINT_SUMMARY)}</div>` : ''}${complaint.COMPLAINT_NOTES ? `<h4 style="margin-top:16px;margin-bottom:4px;">Notes:</h4><div class="modal-note-box searchable">${formatNotes(complaint.COMPLAINT_NOTES)}</div>` : ''}</section></div>`;
+            const journeyStagesContainer = dom.modalDialog.querySelector('#modal-journey-stages');
+            const stages = (complaint.JOURNEY_STAGES && complaint.JOURNEY_STAGES.length > 0) ? complaint.JOURNEY_STAGES : [PLACEHOLDER_STAGE];
+            stages.sort((a,b) => STAGE_ORDER.indexOf(a.STAGE_NAME) - STAGE_ORDER.indexOf(b.STAGE_NAME)).forEach(stage => { journeyStagesContainer.innerHTML += `<div style="background:var(--bg-subtle);border-left:4px solid var(--primary-color);padding:16px;margin:12px 0;border-radius:0 8px 8px 0;"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;"><span style="font-weight:600;color:var(--text-dark);font-size:16px;">${stage.STAGE_NAME}</span>${stage.CONFIDENCE_SCORE!=null?`<span style="background:#dbeafe;color:#1e40af;padding:4px 8px;border-radius:12px;font-size:12px;font-weight:500;">${(stage.CONFIDENCE_SCORE*100).toFixed(0)}%</span>`:''}</div><div style="color:var(--danger-color);font-weight:500;margin-top:4px;">Trigger: ${stage.COMPLAINT_TRIGGER?.TRIGGER || 'N/A'}</div></div>`; });
+            dom.complaintDetailModal.style.display = 'flex'; document.body.style.overflow = 'hidden';
+            dom.modalDialog.querySelector('.close-btn').addEventListener('click', closeModal); dom.modalDialog.querySelector('#modalSearchInput').addEventListener('input', highlightModalText); dom.modalDialog.querySelector('#modal-search-prev').addEventListener('click', () => navigateModalSearch(-1)); dom.modalDialog.querySelector('#modal-search-next').addEventListener('click', () => navigateModalSearch(1));
+            highlightModalText();
+        }
+        function closeModal() { dom.complaintDetailModal.querySelectorAll('.searchable').forEach(el => { if(el.originalHTML) el.innerHTML = el.originalHTML; delete el.originalHTML; }); dom.complaintDetailModal.style.display = 'none'; document.body.style.overflow = 'auto'; modalSearchState = { matches: [], currentIndex: -1 }; }
+        function highlightModalText() { const searchTerm = dom.modalDialog.querySelector('#modalSearchInput').value; const content = dom.modalDialog.querySelector('.modal-content'); modalSearchState.matches.forEach(el => el.classList.remove('active')); content.querySelectorAll('.searchable').forEach(element => { element.innerHTML = element.originalHTML || element.innerHTML; if (!element.originalHTML) element.originalHTML = element.innerHTML; }); if (!searchTerm) { modalSearchState = { matches: [], currentIndex: -1 }; updateModalSearchUI(); return; } const regex = new RegExp(searchTerm.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&'), 'gi'); content.querySelectorAll('.searchable').forEach(element => { element.innerHTML = element.innerHTML.replace(regex, (match) => `<mark>${match}</mark>`); }); modalSearchState.matches = Array.from(content.querySelectorAll('mark')); modalSearchState.currentIndex = modalSearchState.matches.length > 0 ? 0 : -1; updateModalSearchUI(); }
+        function updateModalSearchUI() { const { matches, currentIndex } = modalSearchState; const counter = dom.modalDialog.querySelector('#modal-search-counter'); const prevBtn = dom.modalDialog.querySelector('#modal-search-prev'); const nextBtn = dom.modalDialog.querySelector('#modal-search-next'); counter.textContent = currentIndex === -1 ? '0 of 0' : `${currentIndex + 1} of ${matches.length}`; prevBtn.disabled = currentIndex <= 0; nextBtn.disabled = currentIndex >= matches.length - 1; matches.forEach((match, index) => match.classList.toggle('active', index === currentIndex)); if (matches[currentIndex]) { matches[currentIndex].scrollIntoView({ behavior: 'smooth', block: 'center' }); } }
+        function navigateModalSearch(direction) { const { matches, currentIndex } = modalSearchState; const newIndex = currentIndex + direction; if (newIndex >= 0 && newIndex < matches.length) { modalSearchState.currentIndex = newIndex; updateModalSearchUI(); } }
+        
+        // --- STARTUP ---
+        window.addEventListener('load', initializeDashboard);
+    </script>
+</body>
+</html>

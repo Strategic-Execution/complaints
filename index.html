@@ -122,7 +122,7 @@
             <div class="card metric-card"><div class="metric-text"><p>Total Complaints</p><p id="totalComplaints">0</p></div><div class="metric-icon">📄</div></div>
             <div class="card metric-card"><div class="metric-text"><p>Unique Stages</p><p id="journeyStages">0</p></div><div class="metric-icon">⏰</div></div>
             <div class="card metric-card"><div class="metric-text"><p>Unique Triggers</p><p id="complaintTriggers">0</p></div><div class="metric-icon">⚠️</div></div>
-            <div class="card metric-card"><div class="metric-text"><p>Avg Confidence</p><p id="avgConfidence">0%</p></div><div class="metric-icon">📊</div></div>
+            <div class="card metric-card"><div class="metric-text"><p>Avg Trigger Confidence</p><p id="avgConfidence">0%</p></div><div class="metric-icon">📊</div></div>
         </section>
 
         <section class="card filters-card">
@@ -136,7 +136,7 @@
                 <div class="filter-group" id="customDateRangeEnd" style="display: none;"><label for="endDate">End Date</label><input type="date" id="endDate" /></div>
                 <div class="filter-group"><label for="stageFilter">Journey Stage</label><select id="stageFilter"><option value="all">All Stages</option></select></div>
                 <div class="filter-group"><label for="triggerFilter">Trigger</label><select id="triggerFilter"><option value="all">All Triggers</option></select></div>
-                <div class="filter-group"><label for="confidenceFilter">Confidence</label><select id="confidenceFilter"><option value="all">All Scores</option><option value="90">90%+</option><option value="80">80%+</option></select></div>
+                <div class="filter-group"><label for="confidenceFilter">Trigger Confidence</label><select id="confidenceFilter"><option value="all">All Scores</option><option value="90">90%+</option><option value="80">80%+</option></select></div>
             </div>
         </section>
 
@@ -175,9 +175,8 @@
         const ROWS_PER_PAGE = 100;
         const CHART_COLORS = ['#4E79A7', '#F28E2B', '#E15759', '#76B7B2', '#59A14F', '#EDC948', '#B07AA1', '#FF9DA7', '#9C755F'];
         const MUTED_COLOR_OPACITY = 0.25;
-        // --- FIX: Correct the typo in 'Repair/Recovery' ---
         const STAGE_ORDER = ['Policy & Sales', 'Incident', 'Lodgement', 'Assessment', 'Decision', 'Repair/Recovery', 'Settlement/Closure', 'Unknown'];
-        const PLACEHOLDER_STAGE = { STAGE_NAME: 'Unknown', COMPLAINT_TRIGGER: { TRIGGER: 'Unknown' }, CONFIDENCE_SCORE: null };
+        const PLACEHOLDER_STAGE = { STAGE_NAME: 'Unknown', COMPLAINT_TRIGGER: { TRIGGER: 'Unknown', CONFIDENCE_SCORE: null } };
 
         // --- STATE MANAGEMENT ---
         let allData = [];
@@ -188,9 +187,9 @@
         
         // --- SAMPLE DATA ---
         const sampleData = [
-            {"CLAIM_ID":"7463756", "CLAIM_NUMBER":"NRP256311302", "COMPLAINT_DATE":"26/02/2025", "COMPLAINT_SUMMARY":"The insured reported losing personal belongings in the vehicle holding yard...", "JOURNEY_STAGES":[{"COMPLAINT_TRIGGER":{"CONFIDENCE_SCORE":0.6, "TRIGGER":"Third-Party Towing or Storage Dispute"}, "CONFIDENCE_SCORE":0.6, "STAGE_NAME":"Repair/Recovery"}]},
-            { "CLAIM_ID":"1", "CLAIM_NUMBER":"CLAIM-001", "COMPLAINT_DATE":"1/1/2024", "COMPLAINT_SUMMARY":"The online portal failed...", "JOURNEY_STAGES":[{"STAGE_NAME":"Lodgement","COMPLAINT_TRIGGER":{"TRIGGER":"Online Claim Lodgement Failure"},"CONFIDENCE_SCORE":0.9}]},
-            { "CLAIM_ID":"3", "CLAIM_NUMBER":"CLAIM-003", "COMPLAINT_DATE":null, "COMPLAINT_SUMMARY":"Customer called to complain but did not provide enough details...", "JOURNEY_STAGES":[]}
+            {"CLAIM_ID":"1", "CLAIM_NUMBER":"CLAIM-001", "COMPLAINT_DATE":"1/1/2024", "COMPLAINT_SUMMARY":"The online portal failed...", "JOURNEY_STAGES":[{"STAGE_NAME":"Lodgement","COMPLAINT_TRIGGER":{"TRIGGER":"Online Claim Lodgement Failure", "CONFIDENCE_SCORE":0.9}}]},
+            {"CLAIM_ID":"2", "CLAIM_NUMBER":"CLAIM-002", "COMPLAINT_DATE":"2/8/2023", "COMPLAINT_SUMMARY":"The policy was inadvertently cancelled...", "JOURNEY_STAGES":[{"STAGE_NAME":"Policy & Sales","COMPLAINT_TRIGGER":{"TRIGGER":"Cancellation or Lapse Before Incident", "CONFIDENCE_SCORE":1.0}}]},
+            {"CLAIM_ID":"3", "CLAIM_NUMBER":"CLAIM-003", "COMPLAINT_DATE":null, "COMPLAINT_SUMMARY":"Customer called to complain but did not provide enough details...", "JOURNEY_STAGES":[]}
         ];
 
         // --- DOM ELEMENT CACHE ---
@@ -228,16 +227,13 @@
         }
 
         function handleFileUpload(event) {
-            const file = event.target.files[0];
-            if (!file) return;
+            const file = event.target.files[0]; if (!file) return;
             Papa.parse(file, { header: true, skipEmptyLines: true,
                 complete: (results) => {
                     if (!results.data || results.data.length === 0) { alert('Error: The selected file is empty or could not be parsed.'); return; }
                     const { loadedData, errorCount } = processUploadedData(results);
-                    if (loadedData.length > 0) {
-                        alert(`Successfully loaded ${loadedData.length} complaints.` + (errorCount > 0 ? ` Could not process ${errorCount} rows.` : ''));
-                        loadData(loadedData);
-                    } else { alert('Upload failed: No valid complaint data could be found in the file. Ensure a "JSON Output" column exists with valid JSON.'); }
+                    if (loadedData.length > 0) { alert(`Successfully loaded ${loadedData.length} complaints.` + (errorCount > 0 ? ` Could not process ${errorCount} rows.` : '')); loadData(loadedData); } 
+                    else { alert('Upload failed: No valid complaint data could be found in the file. Ensure a "JSON Output" column exists with valid JSON.'); }
                 },
                 error: (err) => { alert(`An error occurred while parsing the file: ${err.message}`); }
             });
@@ -313,7 +309,11 @@
                 
                 const stageMatch = filters.stage === 'all' || stage.STAGE_NAME === filters.stage;
                 const triggerMatch = filters.trigger === 'all' || stage.COMPLAINT_TRIGGER?.TRIGGER === filters.trigger;
-                const confidenceMatch = filters.confidence === 'all' || (stage.CONFIDENCE_SCORE && (stage.CONFIDENCE_SCORE * 100 >= parseInt(filters.confidence)));
+
+                // --- FIX: Use the trigger confidence score for filtering ---
+                const triggerConfidence = stage.COMPLAINT_TRIGGER?.CONFIDENCE_SCORE;
+                const confidenceMatch = filters.confidence === 'all' || (triggerConfidence != null && (triggerConfidence * 100 >= parseInt(filters.confidence)));
+
                 const searchMatch = options.ignoreSearch || !filters.searchTerm || item.CLAIM_NUMBER?.toUpperCase().includes(filters.searchTerm);
                 
                 return dateMatch && stageMatch && triggerMatch && confidenceMatch && searchMatch;
@@ -345,7 +345,9 @@
             dom.totalComplaints.textContent = totalCount;
             dom.journeyStages.textContent = new Set(data.map(({ stage }) => stage.STAGE_NAME)).size;
             dom.complaintTriggers.textContent = new Set(data.map(({ stage }) => stage.COMPLAINT_TRIGGER?.TRIGGER).filter(Boolean)).size;
-            const confidences = data.map(({ stage }) => stage.CONFIDENCE_SCORE).filter(c => c != null);
+            
+            // --- FIX: Calculate average confidence using the trigger score ---
+            const confidences = data.map(({ stage }) => stage.COMPLAINT_TRIGGER?.CONFIDENCE_SCORE).filter(c => c != null);
             const avgConfidence = confidences.length > 0 ? (confidences.reduce((a, b) => a + b, 0) / confidences.length * 100).toFixed(0) : 0;
             dom.avgConfidence.textContent = `${avgConfidence}%`;
         }
@@ -375,13 +377,10 @@
         
         function renderStageChart(data, filters) {
             const counts = {};
-            // Use STAGE_ORDER as the definitive list of labels to ensure correct names and order
             const allStagesInOrder = STAGE_ORDER.filter(stageName => data.some(d => d.stage.STAGE_NAME === stageName));
             allStagesInOrder.forEach(stage => counts[stage] = 0);
             data.forEach(({ stage }) => { if (counts.hasOwnProperty(stage.STAGE_NAME)) counts[stage.STAGE_NAME]++; });
-            
             const backgroundColors = allStagesInOrder.map(label => filters.stage === 'all' || label === filters.stage ? CHART_COLORS[0] : CHART_COLORS[0] + Math.round(MUTED_COLOR_OPACITY * 255).toString(16).padStart(2, '0'));
-            
             charts.stageChart = new Chart(dom.stageChart, { type: 'bar', data: { labels: allStagesInOrder, datasets: [{ data: allStagesInOrder.map(label => counts[label]), backgroundColor: backgroundColors }] }, options: getChartOptions({ legend: false, xGrid: false }) });
             dom.stageChart.canvas.onclick = (e) => handleChartClick(e, charts.stageChart, dom.stageFilter);
         }
@@ -440,7 +439,12 @@
                 row.className = 'clickable-row'; row.onclick = () => showComplaintDetails(item);
                 const parsedDate = parseDate(item.COMPLAINT_DATE);
                 const displayDate = parsedDate ? parsedDate.toLocaleDateString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric' }) : 'N/A';
-                row.innerHTML = `<td>${item.CLAIM_NUMBER || 'N/A'}</td><td>${displayDate}</td><td>${stage.STAGE_NAME || 'N/A'}</td><td>${stage.COMPLAINT_TRIGGER?.TRIGGER || 'N/A'}</td><td>${stage.CONFIDENCE_SCORE != null ? `${(stage.CONFIDENCE_SCORE * 100).toFixed(0)}%` : 'N/A'}</td><td class="summary-cell">${item.COMPLAINT_SUMMARY || 'N/A'}</td>`;
+                
+                // --- FIX: Display the trigger confidence score in the table ---
+                const triggerConfidence = stage.COMPLAINT_TRIGGER?.CONFIDENCE_SCORE;
+                const displayConfidence = triggerConfidence != null ? `${(triggerConfidence * 100).toFixed(0)}%` : 'N/A';
+
+                row.innerHTML = `<td>${item.CLAIM_NUMBER || 'N/A'}</td><td>${displayDate}</td><td>${stage.STAGE_NAME || 'N/A'}</td><td>${stage.COMPLAINT_TRIGGER?.TRIGGER || 'N/A'}</td><td>${displayConfidence}</td><td class="summary-cell">${item.COMPLAINT_SUMMARY || 'N/A'}</td>`;
             });
         }
         
@@ -469,7 +473,13 @@
             dom.modalDialog.innerHTML = `<div class="modal-header"><h2>Complaint ${complaint.CLAIM_NUMBER || 'Details'}</h2><button class="close-btn" aria-label="Close modal">×</button></div><div class="modal-search-bar"><input type="search" id="modalSearchInput" placeholder="Search..."><div class="modal-search-controls"><button id="modal-search-prev" aria-label="Previous"><</button><span id="modal-search-counter">0 of 0</span><button id="modal-search-next" aria-label="Next">></button></div></div><div class="modal-content"><section class="modal-section"><h3>📋 Info</h3><p><strong>Claim ID:</strong> ${complaint.CLAIM_ID}</p><p><strong>Date:</strong> ${complaint.COMPLAINT_DATE || 'N/A'}</p><h4 style="margin-top:16px;margin-bottom:4px;">AI Summary:</h4><div class="modal-note-box searchable">${complaint.COMPLAINT_SUMMARY || 'No summary'}</div></section><section class="modal-section" id="modal-journey-stages"><h3>🧩 Journey Stages</h3></section><section class="modal-section">${complaint.ORIGINAL_COMPLAINT_SUMMARY ? `<h4 style="margin-top:16px;margin-bottom:4px;">Original Summary:</h4><div class="modal-note-box searchable">${formatNotes(complaint.ORIGINAL_COMPLAINT_SUMMARY)}</div>` : ''}${complaint.COMPLAINT_NOTES ? `<h4 style="margin-top:16px;margin-bottom:4px;">Notes:</h4><div class="modal-note-box searchable">${formatNotes(complaint.COMPLAINT_NOTES)}</div>` : ''}</section></div>`;
             const journeyStagesContainer = dom.modalDialog.querySelector('#modal-journey-stages');
             const stages = (complaint.JOURNEY_STAGES && complaint.JOURNEY_STAGES.length > 0) ? complaint.JOURNEY_STAGES : [PLACEHOLDER_STAGE];
-            stages.sort((a,b) => STAGE_ORDER.indexOf(a.STAGE_NAME) - STAGE_ORDER.indexOf(b.STAGE_NAME)).forEach(stage => { journeyStagesContainer.innerHTML += `<div style="background:var(--bg-subtle);border-left:4px solid var(--primary-color);padding:16px;margin:12px 0;border-radius:0 8px 8px 0;"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;"><span style="font-weight:600;color:var(--text-dark);font-size:16px;">${stage.STAGE_NAME}</span>${stage.CONFIDENCE_SCORE!=null?`<span style="background:#dbeafe;color:#1e40af;padding:4px 8px;border-radius:12px;font-size:12px;font-weight:500;">${(stage.CONFIDENCE_SCORE*100).toFixed(0)}%</span>`:''}</div><div style="color:var(--danger-color);font-weight:500;margin-top:4px;">Trigger: ${stage.COMPLAINT_TRIGGER?.TRIGGER || 'N/A'}</div></div>`; });
+            stages.sort((a,b) => STAGE_ORDER.indexOf(a.STAGE_NAME) - STAGE_ORDER.indexOf(b.STAGE_NAME)).forEach(stage => { 
+                // --- FIX: Display the trigger confidence score in the modal ---
+                const triggerConfidence = stage.COMPLAINT_TRIGGER?.CONFIDENCE_SCORE;
+                const confidenceHTML = triggerConfidence != null ? `<span style="background:#dbeafe;color:#1e40af;padding:4px 8px;border-radius:12px;font-size:12px;font-weight:500;">${(triggerConfidence * 100).toFixed(0)}% confidence</span>` : '';
+                
+                journeyStagesContainer.innerHTML += `<div style="background:var(--bg-subtle);border-left:4px solid var(--primary-color);padding:16px;margin:12px 0;border-radius:0 8px 8px 0;"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;"><span style="font-weight:600;color:var(--text-dark);font-size:16px;">${stage.STAGE_NAME}</span>${confidenceHTML}</div><div style="color:var(--danger-color);font-weight:500;margin-top:4px;">Trigger: ${stage.COMPLAINT_TRIGGER?.TRIGGER || 'N/A'}</div></div>`; 
+            });
             dom.complaintDetailModal.style.display = 'flex'; document.body.style.overflow = 'hidden';
             dom.modalDialog.querySelector('.close-btn').addEventListener('click', closeModal); dom.modalDialog.querySelector('#modalSearchInput').addEventListener('input', highlightModalText); dom.modalDialog.querySelector('#modal-search-prev').addEventListener('click', () => navigateModalSearch(-1)); dom.modalDialog.querySelector('#modal-search-next').addEventListener('click', () => navigateModalSearch(1));
             highlightModalText();
